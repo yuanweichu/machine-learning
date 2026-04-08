@@ -1,98 +1,25 @@
 """
 SVM 基线模型 - CIFAR-10 图像分类
 使用 HOG 特征进行分类
+增加样本量 + 多次实验取平均
 """
 
 import time
 import numpy as np
-import torch
 import torchvision
 import torchvision.transforms as transforms
 from skimage.feature import hog
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report
+from multiprocessing import Pool, cpu_count
 import psutil
 import os
 
 
-# ============================================
-# 第一部分：数据加载与降采样
-# ============================================
-print("=" * 60)
-print("第一步：加载 CIFAR-10 数据集")
-print("=" * 60)
-
-# 数据转换：将 PIL 图片转换为 numpy 数组
-transform = transforms.Compose([
-    transforms.ToTensor()
-])
-
-# 从指定路径加载 CIFAR-10 训练集和测试集
-train_dataset = torchvision.datasets.CIFAR10(
-    root='D:/ML_Data/cifar10',
-    train=True,
-    download=False,
-    transform=transform
-)
-
-test_dataset = torchvision.datasets.CIFAR10(
-    root='D:/ML_Data/cifar10',
-    train=False,
-    download=False,
-    transform=transform
-)
-
-print(f"原始训练集大小: {len(train_dataset)}")
-print(f"原始测试集大小: {len(test_dataset)}")
-
-# 随机降采样以加速训练（防止 SVM 过慢）
-np.random.seed(42)
-train_indices = np.random.choice(len(train_dataset), 5000, replace=False)
-test_indices = np.random.choice(len(test_dataset), 1000, replace=False)
-
-train_subset = torch.utils.data.Subset(train_dataset, train_indices)
-test_subset = torch.utils.data.Subset(test_dataset, test_indices)
-
-print(f"降采样后训练集大小: {len(train_subset)}")
-print(f"降采样后测试集大小: {len(test_subset)}")
-
-# 提取数据和标签
-train_images = [train_dataset[i][0].numpy() for i in train_indices]
-train_labels = [train_dataset[i][1] for i in train_indices]
-
-test_images = [test_dataset[i][0].numpy() for i in test_indices]
-test_labels = [test_dataset[i][1] for i in test_indices]
-
-
-# ============================================
-# 第二部分：HOG 特征提取
-# ============================================
-print("\n" + "=" * 60)
-print("第二步：提取 HOG 特征")
-print("=" * 60)
-
-# 记录特征提取开始时间和内存
-feature_start_time = time.time()
-process = psutil.Process(os.getpid())
-mem_before_feature = process.memory_info().rss / 1024 / 1024  # MB
-
-
 def extract_hog_features(image):
-    """
-    从单张图片中提取 HOG 特征
-    输入: image (3, 32, 32) 的 torch tensor
-    输出: HOG 特征向量
-    """
-    # 转换为 (32, 32, 3) 并转为 uint8
+    """从单张图片中提取 HOG 特征"""
     img = (image.transpose(1, 2, 0) * 255).astype(np.uint8)
-    
-    # 转换为灰度图
     gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-    
-    # 提取 HOG 特征
-    # pixels_per_cell: 每个 cell 的像素数
-    # cells_per_block: 每个 block 的 cell 数
-    # orientations: 方向梯度数
     features = hog(
         gray,
         orientations=9,
@@ -105,114 +32,199 @@ def extract_hog_features(image):
     return features
 
 
-# 提取训练集 HOG 特征
-print("正在提取训练集 HOG 特征...")
-train_features = []
-for i, img in enumerate(train_images):
-    features = extract_hog_features(img)
-    train_features.append(features)
-    if (i + 1) % 1000 == 0:
-        print(f"  已处理 {i + 1}/{len(train_images)} 张图片")
-
-train_features = np.array(train_features)
-train_labels = np.array(train_labels)
-
-print(f"训练集特征形状: {train_features.shape}")
-
-# 提取测试集 HOG 特征
-print("正在提取测试集 HOG 特征...")
-test_features = []
-for i, img in enumerate(test_images):
-    features = extract_hog_features(img)
-    test_features.append(features)
-    if (i + 1) % 500 == 0:
-        print(f"  已处理 {i + 1}/{len(test_images)} 张图片")
-
-test_features = np.array(test_features)
-test_labels = np.array(test_labels)
-
-print(f"测试集特征形状: {test_features.shape}")
-
-# 记录特征提取结束时间和内存
-feature_end_time = time.time()
-mem_after_feature = process.memory_info().rss / 1024 / 1024  # MB
-
-feature_time = feature_end_time - feature_start_time
-feature_mem_usage = mem_after_feature - mem_before_feature
-
-print(f"\n特征提取总耗时: {feature_time:.2f} 秒")
-print(f"特征提取内存消耗: {feature_mem_usage:.2f} MB")
+def extract_features_parallel(images, num_workers=None):
+    """使用多进程并行提取 HOG 特征"""
+    if num_workers is None:
+        num_workers = max(1, cpu_count() - 1)
+    with Pool(processes=num_workers) as pool:
+        features = pool.map(extract_hog_features, images)
+    return np.array(features)
 
 
-# ============================================
-# 第三部分：SVM 模型训练
-# ============================================
-print("\n" + "=" * 60)
-print("第三步：训练 SVM 模型")
-print("=" * 60)
+def run_svm_experiment():
+    TRAIN_SAMPLES = 10000
+    TEST_SAMPLES = 1000
+    NUM_EXPERIMENTS = 3
 
-# 记录训练开始时间和内存
-train_start_time = time.time()
-mem_before_train = process.memory_info().rss / 1024 / 1024  # MB
+    print("=" * 60)
+    print("SVM + HOG 实验配置")
+    print("=" * 60)
+    print(f"训练集样本数: {TRAIN_SAMPLES}")
+    print(f"测试集样本数: {TEST_SAMPLES}")
+    print(f"重复实验次数: {NUM_EXPERIMENTS}")
+    print(f"使用 CPU 核心数: {cpu_count()}")
 
-# 创建并训练 SVM 分类器
-# 使用 RBF 核函数，默认参数
-svm_model = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42)
+    print("\n" + "=" * 60)
+    print("第一步：加载 CIFAR-10 数据集")
+    print("=" * 60)
 
-print("正在训练 SVM（这可能需要几分钟）...")
-svm_model.fit(train_features, train_labels)
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
 
-# 记录训练结束时间和内存
-train_end_time = time.time()
-mem_after_train = process.memory_info().rss / 1024 / 1024  # MB
+    train_dataset = torchvision.datasets.CIFAR10(
+        root='D:/ML_Data/cifar10',
+        train=True,
+        download=False,
+        transform=transform
+    )
 
-train_time = train_end_time - train_start_time
-train_mem_usage = mem_after_train - mem_before_train
+    test_dataset = torchvision.datasets.CIFAR10(
+        root='D:/ML_Data/cifar10',
+        train=False,
+        download=False,
+        transform=transform
+    )
 
-print(f"\nSVM 训练总耗时: {train_time:.2f} 秒")
-print(f"SVM 训练内存消耗: {train_mem_usage:.2f} MB")
+    print(f"原始训练集大小: {len(train_dataset)}")
+    print(f"原始测试集大小: {len(test_dataset)}")
+
+    all_accuracies = []
+    all_feature_times = []
+    all_train_times = []
+    all_total_times = []
+    all_feature_mems = []
+    all_train_mems = []
+
+    for exp_id in range(NUM_EXPERIMENTS):
+        print("\n" + "=" * 60)
+        print(f"第 {exp_id + 1}/{NUM_EXPERIMENTS} 次实验")
+        print("=" * 60)
+
+        random_seed = 42 + exp_id * 100
+        np.random.seed(random_seed)
+
+        train_indices = np.random.choice(len(train_dataset), TRAIN_SAMPLES, replace=False)
+        test_indices = np.random.choice(len(test_dataset), TEST_SAMPLES, replace=False)
+
+        print(f"随机种子: {random_seed}")
+        print(f"训练集样本数: {len(train_indices)}")
+        print(f"测试集样本数: {len(test_indices)}")
+
+        train_images = [train_dataset[i][0].numpy() for i in train_indices]
+        train_labels = [train_dataset[i][1] for i in train_indices]
+
+        test_images = [test_dataset[i][0].numpy() for i in test_indices]
+        test_labels = [test_dataset[i][1] for i in test_indices]
+
+        print("\n" + "-" * 40)
+        print("第二步：提取 HOG 特征（多进程加速）")
+        print("-" * 40)
+
+        process = psutil.Process(os.getpid())
+
+        feature_start_time = time.time()
+        mem_before_feature = process.memory_info().rss / 1024 / 1024
+
+        print(f"正在提取训练集 HOG 特征 ({TRAIN_SAMPLES} 张)...")
+        train_features = extract_features_parallel(train_images)
+        print(f"训练集特征形状: {train_features.shape}")
+
+        print(f"正在提取测试集 HOG 特征 ({TEST_SAMPLES} 张)...")
+        test_features = extract_features_parallel(test_images)
+        print(f"测试集特征形状: {test_features.shape}")
+
+        feature_end_time = time.time()
+        mem_after_feature = process.memory_info().rss / 1024 / 1024
+
+        feature_time = feature_end_time - feature_start_time
+        feature_mem_usage = mem_after_feature - mem_before_feature
+
+        print(f"特征提取总耗时: {feature_time:.2f} 秒")
+        print(f"特征提取内存消耗: {feature_mem_usage:.2f} MB")
+
+        train_labels = np.array(train_labels)
+        test_labels = np.array(test_labels)
+
+        print("\n" + "-" * 40)
+        print("第三步：训练 SVM 模型")
+        print("-" * 40)
+
+        train_start_time = time.time()
+        mem_before_train = process.memory_info().rss / 1024 / 1024
+
+        svm_model = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42)
+
+        print("正在训练 SVM...")
+        svm_model.fit(train_features, train_labels)
+
+        train_end_time = time.time()
+        mem_after_train = process.memory_info().rss / 1024 / 1024
+
+        train_time = train_end_time - train_start_time
+        train_mem_usage = mem_after_train - mem_before_train
+
+        print(f"SVM 训练总耗时: {train_time:.2f} 秒")
+        print(f"SVM 训练内存消耗: {train_mem_usage:.2f} MB")
+
+        print("\n" + "-" * 40)
+        print("第四步：模型评估")
+        print("-" * 40)
+
+        print("正在测试集上进行预测...")
+        predictions = svm_model.predict(test_features)
+
+        accuracy = accuracy_score(test_labels, predictions)
+        print(f"\n测试集准确率 (Accuracy): {accuracy:.4f} ({accuracy * 100:.2f}%)")
+
+        if exp_id == NUM_EXPERIMENTS - 1:
+            print("\n分类报告 (Classification Report):")
+            print(classification_report(
+                test_labels,
+                predictions,
+                target_names=[
+                    'airplane', 'automobile', 'bird', 'cat', 'deer',
+                    'dog', 'frog', 'horse', 'ship', 'truck'
+                ]
+            ))
+
+        all_accuracies.append(accuracy * 100)
+        all_feature_times.append(feature_time)
+        all_train_times.append(train_time)
+        all_total_times.append(feature_time + train_time)
+        all_feature_mems.append(feature_mem_usage)
+        all_train_mems.append(train_mem_usage)
+
+        print(f"\n本次实验总计: 耗时 {feature_time + train_time:.2f} 秒, 内存 {feature_mem_usage + train_mem_usage:.2f} MB")
+
+    print("\n" + "=" * 60)
+    print("统计结果汇总")
+    print("=" * 60)
+
+    mean_accuracy = np.mean(all_accuracies)
+    std_accuracy = np.std(all_accuracies)
+    mean_feature_time = np.mean(all_feature_times)
+    mean_train_time = np.mean(all_train_times)
+    mean_total_time = np.mean(all_total_times)
+    mean_feature_mem = np.mean(all_feature_mems)
+    mean_train_mem = np.mean(all_train_mems)
+    mean_total_mem = np.mean(all_feature_mems) + np.mean(all_train_mems)
+
+    print(f"\n准确率 (Accuracy):")
+    print(f"  各次实验: {[f'{a:.2f}%' for a in all_accuracies]}")
+    print(f"  平均值 ± 标准差: {mean_accuracy:.2f}% ± {std_accuracy:.2f}%")
+
+    print(f"\n特征提取耗时 (秒):")
+    print(f"  各次实验: {[f'{t:.2f}' for t in all_feature_times]}")
+    print(f"  平均值: {mean_feature_time:.2f} 秒")
+
+    print(f"\nSVM 训练耗时 (秒):")
+    print(f"  各次实验: {[f'{t:.2f}' for t in all_train_times]}")
+    print(f"  平均值: {mean_train_time:.2f} 秒")
+
+    print(f"\n总耗时 (秒):")
+    print(f"  各次实验: {[f'{t:.2f}' for t in all_total_times]}")
+    print(f"  平均值: {mean_total_time:.2f} 秒")
+
+    print(f"\n内存消耗 (MB):")
+    print(f"  特征提取平均: {mean_feature_mem:.2f} MB")
+    print(f"  训练平均: {mean_train_mem:.2f} MB")
+    print(f"  总计平均: {mean_total_mem:.2f} MB")
+
+    print("\n" + "=" * 60)
+    print("程序执行完成！")
+    print("=" * 60)
 
 
-# ============================================
-# 第四部分：模型评估
-# ============================================
-print("\n" + "=" * 60)
-print("第四步：模型评估")
-print("=" * 60)
-
-# 在测试集上进行预测
-print("正在测试集上进行预测...")
-predictions = svm_model.predict(test_features)
-
-# 计算准确率
-accuracy = accuracy_score(test_labels, predictions)
-print(f"\n测试集准确率 (Accuracy): {accuracy:.4f} ({accuracy * 100:.2f}%)")
-
-# 打印详细分类报告
-print("\n分类报告 (Classification Report):")
-print(classification_report(
-    test_labels,
-    predictions,
-    target_names=[
-        'airplane', 'automobile', 'bird', 'cat', 'deer',
-        'dog', 'frog', 'horse', 'ship', 'truck'
-    ]
-))
-
-
-# ============================================
-# 第五部分：复杂度分析总结
-# ============================================
-print("\n" + "=" * 60)
-print("复杂度分析总结")
-print("=" * 60)
-print(f"特征提取耗时: {feature_time:.2f} 秒")
-print(f"SVM 训练耗时: {train_time:.2f} 秒")
-print(f"总耗时: {feature_time + train_time:.2f} 秒")
-print(f"\n特征提取内存峰值变化: {feature_mem_usage:.2f} MB")
-print(f"SVM 训练内存峰值变化: {train_mem_usage:.2f} MB")
-print(f"总内存消耗: {feature_mem_usage + train_mem_usage:.2f} MB")
-
-print("\n" + "=" * 60)
-print("程序执行完成！")
-print("=" * 60)
+if __name__ == '__main__':
+    run_svm_experiment()
