@@ -1,9 +1,3 @@
-"""
-SVM 基线模型 - CIFAR-10 图像分类
-使用 HOG 特征进行分类
-增加样本量 + 多次实验取平均
-"""
-
 import time
 import numpy as np
 import torchvision
@@ -17,7 +11,6 @@ import os
 
 
 def extract_hog_features(image):
-    """从单张图片中提取 HOG 特征"""
     img = (image.transpose(1, 2, 0) * 255).astype(np.uint8)
     gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
     features = hog(
@@ -33,7 +26,6 @@ def extract_hog_features(image):
 
 
 def extract_features_parallel(images, num_workers=None):
-    """使用多进程并行提取 HOG 特征"""
     if num_workers is None:
         num_workers = max(1, cpu_count() - 1)
     with Pool(processes=num_workers) as pool:

@@ -1,13 +1,6 @@
-"""
-论文配图生成脚本 v2.0
-数据配置：10,000 Samples, 3-Run Average
-CVPR 学术风格 (包含误差棒)
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 设置学术风格
 plt.rcParams.update({
     'font.family': 'sans-serif',
     'font.size': 12,
@@ -23,9 +16,7 @@ plt.rcParams.update({
     'grid.alpha': 0.3
 })
 
-# ============================================
-# 最新实验数据 (10,000 Samples)
-# ============================================
+
 models = ['SVM + HOG', 'CNN']
 
 # 准确率平均值与标准差
@@ -42,9 +33,9 @@ x = np.arange(len(models))
 width = 0.45
 colors = ['#2E86AB', '#A23B72'] # 高对比度蓝/紫
 
-# ============================================
-# 图1：准确率对比图 (带误差棒)
-# ============================================
+
+# 图1：准确率对比图
+
 fig1, ax1 = plt.subplots(figsize=(6, 5))
 
 bars1 = ax1.bar(x, acc_mean, width, yerr=acc_std, 
@@ -70,9 +61,9 @@ plt.tight_layout()
 fig1.savefig('accuracy_comparison_v2.png')
 print("已保存: accuracy_comparison_v2.png")
 
-# ============================================
+
 # 图2：训练时间对比图
-# ============================================
+
 fig2, ax2 = plt.subplots(figsize=(6, 5))
 
 bars2 = ax2.bar(x, time_mean, width, color=colors, edgecolor='black', linewidth=1.2)
@@ -94,9 +85,9 @@ plt.tight_layout()
 fig2.savefig('time_comparison_v2.png')
 print("已保存: time_comparison_v2.png")
 
-# ============================================
+
 # 图3：内存消耗对比图
-# ============================================
+
 fig3, ax3 = plt.subplots(figsize=(6, 5))
 
 bars3 = ax3.bar(x, memory_val, width, color=colors, edgecolor='black', linewidth=1.2)

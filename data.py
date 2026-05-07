@@ -4,14 +4,11 @@ import torchvision.transforms as transforms
 import os
 
 def prepare_data():
-    # 1. 路径设置：确保存在 D 盘，避免占用 C 盘
+  
     data_root = 'D:/ML_Data/cifar10'
     if not os.path.exists(data_root):
         os.makedirs(data_root)
         print(f"创建目录: {data_root}")
-
-    # 2. 定义数据转换（标准化）
-    # CIFAR-10 图片是 32x32 像素的彩色图
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
@@ -37,7 +34,7 @@ def prepare_data():
     print(f"测试集样本数: {len(testset)}")
     print(f"数据集类别: {classes}")
     print("-" * 30)
-    print("运行成功！你可以开始编写模型代码了。")
+    print("运行成功！可以开始编写模型代码了。")
 
 if __name__ == "__main__":
     prepare_data()

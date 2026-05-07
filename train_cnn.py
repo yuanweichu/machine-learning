@@ -1,9 +1,3 @@
-"""
-CNN 基线模型 - CIFAR-10 图像分类
-使用简单卷积神经网络进行分类
-增加样本量 + 多次实验取平均
-"""
-
 import time
 import numpy as np
 import torch
@@ -16,9 +10,6 @@ import psutil
 import os
 
 
-# ============================================
-# 配置参数
-# ============================================
 TRAIN_SAMPLES = 10000
 TEST_SAMPLES = 1000
 NUM_EXPERIMENTS = 3
@@ -38,9 +29,7 @@ print(f"训练轮数: {NUM_EPOCHS}")
 print(f"批次大小: {BATCH_SIZE}")
 
 
-# ============================================
 # 第一部分：数据加载
-# ============================================
 print("\n" + "=" * 60)
 print("第一步：加载 CIFAR-10 数据集")
 print("=" * 60)
@@ -68,11 +57,10 @@ print(f"原始训练集大小: {len(train_dataset)}")
 print(f"原始测试集大小: {len(test_dataset)}")
 
 
-# ============================================
+
 # CNN 模型定义
-# ============================================
+
 class SimpleCNN(nn.Module):
-    """简单的 CNN 模型 - 3 个卷积层 + 2 个全连接层"""
 
     def __init__(self, num_classes=10):
         super(SimpleCNN, self).__init__()
@@ -109,9 +97,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"使用设备: {device}")
 
 
-# ============================================
-# 重复实验主循环
-# ============================================
+
 all_accuracies = []
 all_train_times = []
 all_train_mems = []
@@ -275,9 +261,7 @@ for exp_id in range(NUM_EXPERIMENTS):
     print(f"\n本次实验: 耗时 {train_time:.2f} 秒, 内存 {train_mem_usage:.2f} MB")
 
 
-# ============================================
 # 第五部分：统计分析
-# ============================================
 print("\n" + "=" * 60)
 print("统计结果汇总")
 print("=" * 60)
